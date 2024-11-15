@@ -1,0 +1,95 @@
+# Define Task and Agent classes at the top
+class Task:
+    def __init__(self, task_id, position):
+        self.task_id = task_id
+        self.position = position
+        self.task_name = task_id + 1  # Adjusted for correct numbering
+
+  class Agent:
+  def __init__(self, position, id=0, tasks=None):
+        """
+        Initialize an agent with a position, ID, and list of tasks.
+        """
+        self.position = position
+        self.id = id
+        self.agent_name = id + 1
+        self.task_num = len(tasks) if tasks else 0
+        self.x = [0] * self.task_num  # Task assignment vector
+        self.y = [float('inf')] * self.task_num  # Cost estimates
+        self.c = [manhattan_distance(self.position, task.position) for task in tasks] if tasks else []
+        self.J = None  # Index of the selected task
+
+   def select_task(self):
+        """
+        Select a task by evaluating costs and updating `x` and `y`.
+        """
+        if sum(self.x) == 0:  # No task selected yet
+            h = [1 if self.y[i] > self.c[i] else 0 for i in range(self.task_num)]
+            if sum(h) > 0:  # If there are eligible tasks
+                eligible_costs = [self.c[i] if h[i] == 1 else float('inf') for i in range(self.task_num)]
+                self.J = eligible_costs.index(min(eligible_costs))
+                self.x[self.J] = 1
+                self.y[self.J] = self.c[self.J]
+
+    def update_task(self, neighbor_data):
+        """
+        Update task assignment based on neighbors' messages.
+        """
+        old_x = self.x[:]
+        for task_index in range(self.task_num):
+            neighbor_costs = [neighbor_data[agent_id][task_index] for agent_id in neighbor_data]
+            self.y[task_index] = min([self.y[task_index]] + neighbor_costs)
+
+        # Ensure the task is still valid for this agent
+        if self.J is not None and self.x[self.J] == 1:
+            owner = min((self.y[self.J], self.id))
+            if owner[1] != self.id:
+                self.x[self.J] = 0
+
+        return old_x == self.x  # Return whether the state has converged
+
+   def send_message(self):
+        """
+        Share current state of task costs with neighbors.
+        """
+        return self.y
+
+def run_cbaa_experiment(agents, communication_graph):
+    """
+    Run the Consensus-Based Auction Algorithm (CBAA).
+
+    Args:
+        agents (list): List of Agent objects.
+        communication_graph (ndarray): Adjacency matrix indicating agent communication.
+    """
+    iteration = 0
+    while True:
+        print(f"== Iteration {iteration} ==")
+
+        # Task selection (Auction Phase)
+        for agent in agents:
+            agent.select_task()
+
+        # Collect messages from all agents
+        messages = [agent.send_message() for agent in agents]
+
+        # Consensus Phase
+        converged = True
+        for agent in agents:
+            neighbors = [i for i, connected in enumerate(communication_graph[agent.id]) if connected and i != agent.id]
+            neighbor_data = {i: messages[i] for i in neighbors}
+            converged = converged and agent.update_task(neighbor_data)
+
+        # Check convergence
+        if converged:
+            print("Algorithm has converged.")
+            break
+
+        iteration += 1
+
+    # Final task assignments
+    assignments = {}
+    for agent in agents:
+        assigned_task = [i for i, x in enumerate(agent.x) if x == 1]
+        assignments[agent.id] = assigned_task[0] if assigned_task else None
+    return assignments
